@@ -17,10 +17,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
 # --- Auth Configuration ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
-USER_EMPLOYEE_NAME_URL = "http://127.0.0.1:4000/users/employee_name"
-BLOCKCHAIN_LOG_URL = "http://localhost:9005/blockchain/log"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://authservices-npr8.onrender.com/auth/token")
+USER_SERVICE_ME_URL = "https://authservices-npr8.onrender.com/auth/users/me"
+USER_EMPLOYEE_NAME_URL = "https://authservices-npr8.onrender.com/users/employee_name"
+BLOCKCHAIN_LOG_URL = "https://blockchainservices.onrender.com/blockchain/log"
 
 # --- Define the refund router ---
 router_refund = APIRouter(

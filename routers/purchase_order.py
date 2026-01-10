@@ -22,11 +22,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
 # --- Auth and Service URL Configuration ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
-USER_EMPLOYEE_NAME_URL = "http://127.0.0.1:4000/users/employee_name"
-NOTIFICATION_SERVICE_URL = "http://localhost:9004/notifications/"
-BLOCKCHAIN_LOG_URL = "http://localhost:9005/blockchain/log"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://authservices-npr8.onrender.com/auth/token")
+USER_SERVICE_ME_URL = "https://authservices-npr8.onrender.com/auth/users/me"
+USER_EMPLOYEE_NAME_URL = "https://authservices-npr8.onrender.com/users/employee_name"
+NOTIFICATION_SERVICE_URL = "https://notificationservice-1jp5.onrender.com/notifications/"
+BLOCKCHAIN_LOG_URL = "https://blockchainservices.onrender.com/blockchain/log"
 
 
 # --- Define the new router ---
@@ -101,8 +101,8 @@ async def process_inventory_restock_background(order_id: str, items_to_restock: 
         }
         
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        ingredients_url = "http://127.0.0.1:8002/ingredients/restock-from-cancelled-order"
-        materials_url = "http://127.0.0.1:8002/materials/restock-from-cancelled-order"
+        ingredients_url = "https://bleu-stockservices.onrender.com/ingredients/restock-from-cancelled-order"
+        materials_url = "https://bleu-stockservices.onrender.com/materials/restock-from-cancelled-order"
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             tasks = [
@@ -1003,7 +1003,7 @@ async def save_online_order(
             try:
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
-                        f"http://127.0.0.1:4000/users/employee_name",
+                        f"https://authservices-npr8.onrender.com/users/employee_name",
                         params={"username": order_data.cashier_name},
                         headers={"Authorization": f"Bearer {current_user['access_token']}"},
                         timeout=5.0
@@ -1394,7 +1394,7 @@ async def update_order_status(
                 try:
                     async with httpx.AsyncClient() as client:
                         response = await client.get(
-                            f"http://127.0.0.1:4000/users/employee_name",
+                            f"https://authservices-npr8.onrender.com/users/employee_name",
                             params={"username": actor},
                             headers={"Authorization": f"Bearer {current_user['access_token']}"},
                             timeout=5.0

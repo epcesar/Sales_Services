@@ -17,16 +17,16 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db_connection
 
 # --- Auth and Service URL Configuration ---
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://authservices-npr8.onrender.com/auth/token")
+USER_SERVICE_ME_URL = "https://authservices-npr8.onrender.com/auth/users/me"
 
 # --- Blockchain Service URL ---
-BLOCKCHAIN_LOG_URL = "http://localhost:9005/blockchain/log"
+BLOCKCHAIN_LOG_URL = "https://blockchainservices.onrender.com/blockchain/log"
 
 # --- URLs for Inventory Deduction Endpoints ---
-INGREDIENTS_DEDUCT_URL = "http://127.0.0.1:8002/ingredients/deduct-from-sale"
-MATERIALS_DEDUCT_URL = "http://127.0.0.1:8002/materials/deduct-from-sale"
-MERCHANDISE_DEDUCT_URL = "http://127.0.0.1:8002/merchandise/deduct-from-sale"
+INGREDIENTS_DEDUCT_URL = "https://bleu-stockservices.onrender.com/ingredients/deduct-from-sale"
+MATERIALS_DEDUCT_URL = "https://bleu-stockservices.onrender.com/materials/deduct-from-sale"
+MERCHANDISE_DEDUCT_URL = "https://bleu-stockservices.onrender.com/merchandise/deduct-from-sale"
 
 router_sales = APIRouter(prefix="/auth/sales", tags=["sales"])
 
@@ -653,7 +653,7 @@ async def create_sale(
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"http://127.0.0.1:4000/users/employee_name",
+                    f"https://bleu-stockservices.onrender.com/users/employee_name",
                     params={"username": cashier_name},
                     headers={"Authorization": f"Bearer {current_user['access_token']}"},
                     timeout=5.0

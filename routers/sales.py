@@ -18,8 +18,8 @@ from database import get_db_connection
 
 # --- Auth Configuration ---
 from fastapi.security import OAuth2PasswordBearer
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://authservices-npr8.onrender.com/auth/token")
+USER_SERVICE_ME_URL = "https://authservices-npr8.onrender.com/auth/users/me"
 
 
 # --- Define the new router ---
@@ -951,7 +951,7 @@ async def get_sales_report(
                 try:
                     async with httpx.AsyncClient() as client:
                         response = await client.get(
-                            f"http://localhost:4000/users/employee_name?username={reported_by_username}",
+                            f"https://authservices-npr8.onrender.com/users/employee_name?username={reported_by_username}",
                             headers={"Authorization": f"Bearer {token}"}
                         )
                         if response.status_code == 200:
@@ -967,7 +967,7 @@ async def get_sales_report(
                 try:
                     async with httpx.AsyncClient() as client:
                         response = await client.get(
-                            f"http://localhost:4000/users/employee_name?username={verified_by_username}",
+                            f"https://authservices-npr8.onrender.com/users/employee_name?username={verified_by_username}",
                             headers={"Authorization": f"Bearer {token}"}
                         )
                         if response.status_code == 200:

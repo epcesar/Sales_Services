@@ -14,7 +14,7 @@ router_auto_cancel = APIRouter(
 )
 
 # Blockchain Configuration
-BLOCKCHAIN_LOG_URL = os.getenv("BLOCKCHAIN_LOG_URL", "http://localhost:9005/blockchain/log")
+BLOCKCHAIN_LOG_URL = os.getenv("BLOCKCHAIN_LOG_URL", "https://blockchainservices.onrender.com/blockchain/log")
 
 # Flag to control the background task
 _background_task_running = False
@@ -165,7 +165,7 @@ async def auto_cancel_expired_orders():
                                     async with httpx.AsyncClient(timeout=10.0) as client:
                                         # Call OOS to cancel the corresponding order
                                         response = await client.patch(
-                                            f"http://localhost:7004/cart/admin/orders/auto-cancel/{reference_number}",
+                                            f"https://ordering-service-8e9d.onrender.com/cart/admin/orders/auto-cancel/{reference_number}",
                                             json={
                                                 "reason": "Order expired after 30 minutes",
                                                 "cancelled_by": "SYSTEM_AUTO_CANCEL"

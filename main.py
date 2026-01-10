@@ -71,21 +71,14 @@ app.include_router(router_dashboard)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:4001",
-        "http://127.0.0.1:4001",  # Add this
-        "http://192.168.100.32:4001",
-        "http://localhost:3000",
-        "http://localhost:4000",
-        "http://127.0.0.1:4000",
-        "http://192.168.100.14:8002",
-        "http://localhost:8002",
-        "http://192.168.100.14:8003",
-        "http://localhost:8003",
-        "http://localhost:5000",
-        "http://localhost:7004",  # Add OOS service
-        "http://127.0.0.1:7004",
-        "http://localhost:9005",  # Self
-        "http://127.0.0.1:9005",
+        "https://bleu-pos-tau.vercel.app",
+        "https://bleu-ims-beta.vercel.app",
+        "https://authservices-npr8.onrender.com",
+        "https://bleu-stockservices.onrender.com",
+        "https://ims-restockservices.onrender.com",
+        "https://bleu-oos-rouge.vercel.app",
+        "https://ordering-service-8e9d.onrender.com",  # Add OOS service
+        "https://blockchainservices.onrender.com",  # Self
     ],
     allow_credentials=True,
     allow_methods=["*"],

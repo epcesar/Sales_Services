@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Auth Configuration
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="http://127.0.0.1:4000/auth/token")
-USER_SERVICE_ME_URL = "http://localhost:4000/auth/users/me"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://authservices-npr8.onrender.com/auth/token")
+USER_SERVICE_ME_URL = "https://authservices-npr8.onrender.com/auth/users/me"
 
 router_dashboard = APIRouter(
     prefix="/api/dashboard",
@@ -55,7 +55,7 @@ async def get_full_name(username: str, auth_token: str) -> str:
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"http://127.0.0.1:4000/users/employee_name",
+                f"https://authservices-npr8.onrender.com/users/employee_name",
                 params={"username": username},
                 headers={"Authorization": f"Bearer {auth_token}"}
             )
