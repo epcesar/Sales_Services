@@ -25,7 +25,7 @@ from database import get_db_connection
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://authservices-npr8.onrender.com/auth/token")
 USER_SERVICE_ME_URL = "https://authservices-npr8.onrender.com/auth/users/me"
 USER_EMPLOYEE_NAME_URL = "https://authservices-npr8.onrender.com/users/employee_name"
-NOTIFICATION_SERVICE_URL = "https://notificationservice-1jp5.onrender.com/notifications/"
+NOTIFICATION_SERVICE_URL = "https://notificationservice-1jp5.onrender.com/notifications"
 BLOCKCHAIN_LOG_URL = "https://blockchainservices.onrender.com/blockchain/log"
 
 
@@ -103,7 +103,7 @@ async def process_inventory_restock_background(order_id: str, items_to_restock: 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         ingredients_url = "https://bleu-stockservices.onrender.com/ingredients/restock-from-cancelled-order"
         materials_url = "https://bleu-stockservices.onrender.com/materials/restock-from-cancelled-order"
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             tasks = [
                 client.post(ingredients_url, json=cancelled_items_payload, headers=headers),
@@ -272,6 +272,8 @@ class ProcessingSaleItem(BaseModel):
     price: float
     category: str
     addons: List[AddonItem] = []
+    itemDiscounts: List[dict] = []
+    itemPromotions: List[dict] = []
 
 class ProcessingOrder(BaseModel):
     id: str
@@ -328,7 +330,8 @@ class UpdateOrderStatusRequest(BaseModel):
     ]
     cancelDetails: Optional[CancelDetails] = None
     cashier_name: Optional[str] = None  
-
+    items: Optional[List[OnlineSaleItem]] = None 
+    
 class RefundOrderRequest(BaseModel):
     managerUsername: str
     refundReason: Optional[str] = "Customer requested refund"
@@ -358,15 +361,6 @@ class PartialRefundOrderRequest(BaseModel):
         if not v or len(v) == 0:
             raise ValueError('At least one item must be selected for refund')
         return v
-class ProcessingSaleItem(BaseModel):
-    id: int
-    name: str
-    quantity: int
-    price: float
-    category: str
-    addons: List[AddonItem] = []
-    itemDiscounts: List[dict] = []  # Add this if not present
-    itemPromotions: List[dict] = []  # ✅ ADD THIS LINE
 
 @router_purchase_order.get(
     "/status/processing",
@@ -564,6 +558,15 @@ async def save_online_order(
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_active_user)
 ):
+    logger.info(f"=== RECEIVED ONLINE ORDER DATA ===")
+    logger.info(f"Order Type: {order_data.order_type}")
+    logger.info(f"Payment Method: {order_data.payment_method}")
+    logger.info(f"Number of items: {len(order_data.items)}")
+    for idx, item in enumerate(order_data.items):
+        logger.info(f"  Item {idx+1}: {item.name}")
+        logger.info(f"    - Discount: {getattr(item, 'discount', 0)}")
+        logger.info(f"    - Promo Name: {getattr(item, 'promo_name', None)}")
+
     allowed_roles = ["cashier", "admin", "manager", "user"]
     if current_user.get("userRole") not in allowed_roles:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to create orders.")
@@ -1453,7 +1456,7 @@ async def update_pos_status_for_online_order(
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_active_user)
 ):
-    allowed_roles = ["cashier", "rider"]
+    allowed_roles = ["cashier", "rider", "user"]
     if current_user.get("userRole") not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 
@@ -1538,31 +1541,142 @@ async def update_pos_status_for_online_order(
                 old_status,
                 request.newStatus
             )
-            
+
+            total_promotional_discount = Decimal('0.0')
+
+            # --- NEW PROMOTION/ITEM RE-SYNCHRONIZATION LOGIC (ONLY on PENDING -> PROCESSING) ---
+            if request.newStatus == 'processing' and request.items:
+                logger.info("Re-synchronizing items and promotions on order acceptance...")
+
+                # 1. Clear existing promotion links (safer re-sync)
+                await cursor.execute("DELETE FROM SaleItemPromotions WHERE SaleItemID IN (SELECT SaleItemID FROM SaleItems WHERE SaleID = ?)", existing_order.SaleID)
+                await cursor.execute("DELETE FROM SalePromotions WHERE SaleID = ?", existing_order.SaleID)
+
+                promotion_map = {}
+
+                for idx, item in enumerate(request.items):
+                    # Fetch SaleItemID using SaleID and ItemName (assuming name + quantity is a stable identifier)
+                    await cursor.execute(
+                        "SELECT SaleItemID FROM SaleItems WHERE SaleID = ? AND ItemName = ? AND Quantity = ?",
+                        existing_order.SaleID, item.name, item.quantity
+                    )
+                    sale_item_result = await cursor.fetchone()
+
+                    if not sale_item_result:
+                        logger.warning(f"Could not find existing SaleItem for item: {item.name}. Skipping promotion re-sync for item.")
+                        continue
+
+                    new_sale_item_id = sale_item_result.SaleItemID
+                    promo_name_from_client = item.promo_name
+                    promo_discount_from_client = item.discount
+
+                    if promo_name_from_client and promo_discount_from_client and promo_discount_from_client > 0:
+                        # Find or create promotion in promotions table
+                        await cursor.execute(
+                            "SELECT id, name FROM promotions WHERE name = ?",
+                            promo_name_from_client
+                        )
+                        promo_row = await cursor.fetchone()
+
+                        if promo_row:
+                            promo_id = promo_row.id
+                        else:
+                            # Create promotion if missing (fallback from save_online_order)
+                            sql_fallback = """
+                                INSERT INTO promotions (name, promotion_type, promotion_value, status, application_type, isDeleted, valid_from, valid_to)
+                                VALUES (?, 'fixed', ?, 'active', 'all_products', 0, GETDATE(), DATEADD(year, 1, GETDATE()));
+                                SELECT CAST(@@IDENTITY AS INT);
+                            """
+                            await cursor.execute(sql_fallback, promo_name_from_client, promo_discount_from_client)
+                            promo_id_row = await cursor.fetchone()
+                            promo_id = int(promo_id_row[0]) if promo_id_row and promo_id_row[0] else None
+
+                            if not promo_id:
+                                logger.error(f"Failed to create promotion: {promo_name_from_client}")
+                                continue
+
+                        # Add to promotion_map for SalePromotions insertion later
+                        if promo_id not in promotion_map:
+                            promotion_map[promo_id] = {
+                                'promotionId': promo_id,
+                                'promotionName': promo_name_from_client,
+                                'itemPromotions': []
+                            }
+
+                        # Add item promotion details
+                        promotion_map[promo_id]['itemPromotions'].append({
+                            'sale_item_id': new_sale_item_id,
+                            'quantity': item.quantity,
+                            'promotionAmount': promo_discount_from_client
+                        })
+
+                        total_promotional_discount += Decimal(str(promo_discount_from_client))
+
+
+                # Finalize SalePromotions and SaleItemPromotions insertions
+                applied_promotions_for_pos = list(promotion_map.values())
+
+                for promo_data in applied_promotions_for_pos:
+                    promo_id = promo_data['promotionId']
+                    total_promo_amount = sum(
+                        Decimal(str(item_promo['promotionAmount']))
+                        for item_promo in promo_data['itemPromotions']
+                    )
+
+                    # Insert into SalePromotions (sale-level)
+                    sql_sale_promo = "INSERT INTO SalePromotions (SaleID, PromotionID, DiscountApplied) VALUES (?, ?, ?)"
+                    await cursor.execute(sql_sale_promo, existing_order.SaleID, promo_id, total_promo_amount)
+
+                    # Insert into SaleItemPromotions (item-level)
+                    for item_promo in promo_data['itemPromotions']:
+                        sql_item_promo = """
+                            INSERT INTO SaleItemPromotions
+                            (SaleItemID, PromotionID, QuantityPromoted, PromotionAmount)
+                            VALUES (?, ?, ?, ?)
+                        """
+                        await cursor.execute(
+                            sql_item_promo,
+                            item_promo['sale_item_id'],
+                            promo_id,
+                            item_promo['quantity'],
+                            Decimal(str(item_promo['promotionAmount']))
+                        )
+
+                # 3. Update Sales header for PromotionalDiscountAmount
+                update_sales_header_sql = """
+                    UPDATE Sales
+                    SET PromotionalDiscountAmount = ?
+                    WHERE SaleID = ?
+                """
+                await cursor.execute(update_sales_header_sql, total_promotional_discount, existing_order.SaleID)
+                logger.info(f"Updated Sale {existing_order.SaleID} PromotionalDiscountAmount to ₱{total_promotional_discount:.2f}")
+
+            # --- END NEW PROMOTION/ITEM RE-SYNCHRONIZATION LOGIC ---
+
             # ✅ UPDATED SQL - Update SessionID instead of CashierName
             update_sql = """
-                UPDATE Sales 
-                SET Status = ?, 
-                    SessionID = ?, 
-                    UpdatedAt = GETDATE() 
+                UPDATE Sales
+                SET Status = ?,
+                    SessionID = ?,
+                    UpdatedAt = GETDATE()
                 WHERE GCashReferenceNumber = ?
             """
             await cursor.execute(update_sql, request.newStatus, new_session_id, reference_number)
-            
+
             if cursor.rowcount == 0:
                 logger.error(f"Update affected 0 rows for reference '{reference_number}'")
                 raise HTTPException(
                     status_code=500,
                     detail="Failed to update the order status."
                 )
-            
+
             await conn.commit()
             
             # 🆕 NEW: Fetch actor's full name for blockchain logging
             try:
                 async with httpx.AsyncClient() as client:
                     response = await client.get(
-                        f"http://127.0.0.1:4000/users/employee_name",
+                        f"https://authservices-npr8.onrender.com/users/employee_name",
                         params={"username": actor},
                         headers={"Authorization": f"Bearer {current_user['access_token']}"},
                         timeout=5.0
