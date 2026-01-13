@@ -309,6 +309,7 @@ class OnlineOrderRequest(BaseModel):
     payment_method: str
     subtotal: float
     total_amount: float
+    discount: Optional[float] = 0.0
     status: str
     items: List[OnlineSaleItem]
     reference_number: Optional[str] = None
@@ -559,7 +560,7 @@ async def get_processing_orders(
         raise HTTPException(status_code=500, detail="Failed to fetch processing orders.")
     finally:
         if conn: await conn.close()
-        
+
 @router_purchase_order.post(
     "/online-order",
     status_code=status.HTTP_201_CREATED,
@@ -661,6 +662,7 @@ async def save_online_order(
                         # ✅ FIX: Using columns that actually exist in your SQL Schema
                         logger.info(f"    📝 Creating new promotion record: {item.promo_name}")
                         try:
+                            # 🚨 FIX: Convert hardcoded VALUES to placeholders and pass 6 parameters
                             sql_create_promo = """
                                 INSERT INTO promotions (
                                     name, promotion_type, promotion_value, 
@@ -668,20 +670,37 @@ async def save_online_order(
                                     valid_from, valid_to, created_at
                                 )
                                 OUTPUT INSERTED.id
-                                VALUES (?, 'fixed', ?, 'active', 'all_products', 0, GETDATE(), DATEADD(year, 1, GETDATE()), GETDATE());
+                                VALUES (?, ?, ?, ?, ?, ?, GETDATE(), DATEADD(year, 1, GETDATE()), GETDATE());
                             """
                             # We use the item's discount as the promotion_value for this record
-                            await cursor.execute(sql_create_promo, item.promo_name, item.discount)
+                            await cursor.execute(
+                                sql_create_promo, 
+                                item.promo_name,        # name
+                                'fixed',                # promotion_type
+                                item.discount,          # promotion_value
+                                'active',               # status
+                                'all_products',         # application_type
+                                0                       # isDeleted
+                            )
                             promo_id_row = await cursor.fetchone()
                             promo_id = promo_id_row[0]
                         except Exception as promo_error:
                             logger.warning(f"Fallback promotion creation: {promo_error}")
+                            # 🚨 FIX: Convert hardcoded VALUES to placeholders and pass 6 parameters
                             sql_fallback = """
                                 INSERT INTO promotions (name, promotion_type, promotion_value, status, application_type, isDeleted, valid_from, valid_to)
-                                VALUES (?, 'fixed', ?, 'active', 'all_products', 0, GETDATE(), DATEADD(year, 1, GETDATE()));
+                                VALUES (?, ?, ?, ?, ?, ?, GETDATE(), DATEADD(year, 1, GETDATE()));
                                 SELECT CAST(@@IDENTITY AS INT);
                             """
-                            await cursor.execute(sql_fallback, item.promo_name, item.discount)
+                            await cursor.execute(
+                                sql_fallback, 
+                                item.promo_name,        # name
+                                'fixed',                # promotion_type
+                                item.discount,          # promotion_value
+                                'active',               # status
+                                'all_products',         # application_type
+                                0                       # isDeleted
+                            )
                             promo_id_row = await cursor.fetchone()
                             promo_id = promo_id_row[0]
                         
