@@ -104,8 +104,13 @@ async def process_inventory_restock_background(order_id: str, items_to_restock: 
         ingredients_url = "https://bleu-stockservices.onrender.com/ingredients/restock-from-cancelled-order"
         materials_url = "https://bleu-stockservices.onrender.com/materials/restock-from-cancelled-order"
 
+        async with httpx.AsyncClient() as client:
+            tasks = [
+                client.post(ingredients_url, json=cancelled_items_payload, headers=headers),
+                client.post(materials_url, json=cancelled_items_payload, headers=headers)
+            ]
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             for i, res in enumerate(results):
                 service = "Ingredients" if i == 0 else "Materials"
                 if isinstance(res, Exception):
