@@ -362,38 +362,19 @@ class PartialRefundOrderRequest(BaseModel):
             raise ValueError('At least one item must be selected for refund')
         return v
 
-# Add this endpoint to your purchase_order_router.py file
-# This should go after your existing endpoints
-
 @router_purchase_order.get(
-    "/status/{status}",
+    "/status/processing",
     response_model=List[ProcessingOrder],
-    summary="Get Orders by Status (For backward compatibility)"
+    summary="Get Processing Orders with Optional Cashier Filter"
 )
-async def get_orders_by_status(
-    status: str,
+async def get_processing_orders(
+    cashierName: Optional[str] = None,
     current_user: dict = Depends(get_current_active_user)
 ):
-    """
-    Legacy endpoint for fetching orders by status.
-    Maps to the newer /status/processing endpoint logic.
-    """
     allowed_roles = ["admin", "manager", "cashier"]
     user_role = current_user.get("userRole")
     if user_role not in allowed_roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
-            detail="You do not have permission to view orders."
-        )
-    
-    # Validate status
-    valid_statuses = ['processing', 'completed', 'cancelled', 'refunded']
-    status_lower = status.lower()
-    if status_lower not in valid_statuses:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not have permission to view orders.")
     
     conn = None
     try:
@@ -407,33 +388,31 @@ async def get_orders_by_status(
                     s.SaleID, s.OrderType, s.PaymentMethod, s.CreatedAt, 
                     cs.CashierName,
                     s.TotalDiscountAmount, s.PromotionalDiscountAmount, s.Status,
-                    s.GCashReferenceNumber,
-                    si.SaleItemID, si.ItemName, si.Quantity AS ItemQuantity, 
-                    si.UnitPrice, si.Category,
-                    a.AddonID, a.AddonName, a.Price AS AddonPrice, 
-                    sia.Quantity AS AddonQuantity
+                    si.SaleItemID, si.ItemName, si.Quantity AS ItemQuantity, si.UnitPrice, si.Category,
+                    a.AddonID, a.AddonName, a.Price AS AddonPrice, sia.Quantity AS AddonQuantity
                 FROM Sales AS s
                 LEFT JOIN CashierSessions cs ON s.SessionID = cs.SessionID
                 LEFT JOIN SaleItems AS si ON s.SaleID = si.SaleID
                 LEFT JOIN SaleItemAddons AS sia ON si.SaleItemID = sia.SaleItemID
                 LEFT JOIN Addons AS a ON sia.AddonID = a.AddonID
-                WHERE s.Status = ?
+                WHERE s.Status IN ('processing', 'completed', 'cancelled')
             """
-            params = [status_lower]
-            
-            # Filter by cashier for non-admin/manager users
-            if user_role not in ["admin", "manager"]:
+            params = []
+            if user_role in ["admin", "manager"]:
+                if cashierName:
+                    sql += " AND cs.CashierName = ? "
+                    params.append(cashierName)
+            else:
                 sql += " AND cs.CashierName = ? "
                 params.append(logged_in_username)
-                
-            sql += " ORDER BY s.CreatedAt DESC, s.SaleID DESC, si.SaleItemID ASC;"
+            sql += " ORDER BY s.CreatedAt ASC, s.SaleID ASC, si.SaleItemID ASC;"
             
             await cursor.execute(sql, *params)
             rows = await cursor.fetchall()
             
             orders_dict: Dict[int, dict] = {}
             
-            # Build order structure
+            # First pass: Build order structure with items and addons
             for row in rows:
                 sale_id = row.SaleID
                 if sale_id not in orders_dict:
@@ -444,7 +423,6 @@ async def get_orders_by_status(
                         "orderType": row.OrderType,
                         "paymentMethod": row.PaymentMethod, 
                         "cashierName": row.CashierName or "Unknown",
-                        "GCashReferenceNumber": row.GCashReferenceNumber,
                         "items": 0, 
                         "orderItems": [], 
                         "total": 0, 
@@ -488,12 +466,12 @@ async def get_orders_by_status(
                                 })
                                 break
             
-            # Fetch discounts and promotions
+            # Second pass: Fetch discounts and promotions for each item
             for sale_id, order_data in orders_dict.items():
                 for item in order_data["orderItems"]:
                     sale_item_id = item["id"]
                     
-                    # Item-level discounts
+                    # Fetch item-level discounts
                     sql_item_discounts = """
                         SELECT 
                             d.name AS DiscountName,
@@ -513,7 +491,7 @@ async def get_orders_by_status(
                             'discountAmount': float(disc_row.DiscountAmount)
                         })
                     
-                    # Item-level promotions
+                    # ✅ Fetch item-level promotions
                     sql_item_promotions = """
                         SELECT 
                             p.name AS PromotionName,
@@ -536,10 +514,7 @@ async def get_orders_by_status(
             # Build response
             response_list = []
             for sale_id, order_data in orders_dict.items():
-                total_discount = (
-                    (order_data["_totalDiscount"] or Decimal('0.0')) + 
-                    (order_data["_promoDiscount"] or Decimal('0.0'))
-                )
+                total_discount = (order_data["_totalDiscount"] or Decimal('0.0')) + (order_data["_promoDiscount"] or Decimal('0.0'))
                 final_total = order_data["_subtotal"] - total_discount
                 order_data["total"] = float(final_total)
                 
@@ -568,15 +543,11 @@ async def get_orders_by_status(
             return response_list
             
     except Exception as e:
-        logger.error(f"Error fetching orders by status '{status}': {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Failed to fetch {status} orders."
-        )
+        logger.error(f"Error fetching processing orders: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch processing orders.")
     finally:
-        if conn: 
-            await conn.close()
-            
+        if conn: await conn.close()
+
 @router_purchase_order.post(
     "/online-order",
     status_code=status.HTTP_201_CREATED,
