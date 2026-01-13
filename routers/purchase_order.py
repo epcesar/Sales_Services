@@ -430,7 +430,8 @@ async def get_processing_orders(
                         "_totalDiscount": row.TotalDiscountAmount,
                         "_promoDiscount": row.PromotionalDiscountAmount,
                         "_subtotal": Decimal('0.0'), 
-                        "_processed_items": set()
+                        "_processed_items": set(),
+                        "_item_map": {}  # NEW: Map to track items by ID
                     }
 
                 if row.SaleItemID:
@@ -440,8 +441,9 @@ async def get_processing_orders(
                         orders_dict[sale_id]["items"] += item_quantity
                         orders_dict[sale_id]["_subtotal"] += item_price * item_quantity
                         
-                        orders_dict[sale_id]["orderItems"].append({
+                        new_item = {
                             "id": row.SaleItemID,
+                            "saleItemId": row.SaleItemID,  # Add this for consistency
                             "name": row.ItemName,
                             "quantity": item_quantity,
                             "price": float(item_price),
@@ -449,7 +451,10 @@ async def get_processing_orders(
                             "addons": [],
                             "itemDiscounts": [],
                             "itemPromotions": []
-                        })
+                        }
+                        
+                        orders_dict[sale_id]["orderItems"].append(new_item)
+                        orders_dict[sale_id]["_item_map"][row.SaleItemID] = new_item  # NEW: Track by ID
                         orders_dict[sale_id]["_processed_items"].add(row.SaleItemID)
                     
                     if row.AddonID:
@@ -457,20 +462,20 @@ async def get_processing_orders(
                         addon_quantity = row.AddonQuantity or 0
                         orders_dict[sale_id]["_subtotal"] += addon_price * addon_quantity
                         
-                        for item in orders_dict[sale_id]["orderItems"]:
-                            if item["id"] == row.SaleItemID:
-                                item["addons"].append({
-                                    "addonId": row.AddonID,
-                                    "addonName": row.AddonName,
-                                    "price": float(addon_price),
-                                    "quantity": addon_quantity
-                                })
-                                break
+                        # Find item in _item_map for faster access
+                        item = orders_dict[sale_id]["_item_map"].get(row.SaleItemID)
+                        if item:
+                            item["addons"].append({
+                                "addonId": row.AddonID,
+                                "addonName": row.AddonName,
+                                "price": float(addon_price),
+                                "quantity": addon_quantity
+                            })
             
             # Second pass: Fetch discounts and promotions for each item
             for sale_id, order_data in orders_dict.items():
-                for item in order_data["orderItems"]:
-                    sale_item_id = item["id"]
+                # Use _item_map for direct access
+                for sale_item_id, item in order_data["_item_map"].items():
                     
                     # Fetch item-level discounts
                     sql_item_discounts = """
@@ -491,6 +496,7 @@ async def get_processing_orders(
                             'quantityDiscounted': disc_row.QuantityDiscounted,
                             'discountAmount': float(disc_row.DiscountAmount)
                         })
+                        logger.info(f"✅ Added discount to item {sale_item_id}: {disc_row.DiscountName} -₱{disc_row.DiscountAmount}")
                     
                     # Fetch item-level promotions
                     sql_item_promotions = """
@@ -511,6 +517,7 @@ async def get_processing_orders(
                             'quantityPromoted': promo_row.QuantityPromoted,
                             'promotionAmount': float(promo_row.PromotionAmount)
                         })
+                        logger.info(f"✅ Added promotion to item {sale_item_id}: {promo_row.PromotionName} -₱{promo_row.PromotionAmount}")
             
             # Build response
             response_list = []
@@ -529,7 +536,9 @@ async def get_processing_orders(
                             quantity=item_dict["quantity"],
                             price=item_dict["price"],
                             category=item_dict["category"],
-                            addons=[AddonItem(**addon) for addon in item_dict["addons"]]
+                            addons=[AddonItem(**addon) for addon in item_dict["addons"]],
+                            itemDiscounts=item_dict["itemDiscounts"],  # Include discounts
+                            itemPromotions=item_dict["itemPromotions"]  # Include promotions
                         )
                     )
                 
@@ -538,7 +547,9 @@ async def get_processing_orders(
                 del order_data["_processed_items"]
                 del order_data["_totalDiscount"]
                 del order_data["_promoDiscount"]
+                del order_data["_item_map"]  # Clean up helper map
                 
+                logger.info(f"📦 Order {sale_id}: {len(processed_items)} items with discounts/promotions")
                 response_list.append(ProcessingOrder(**order_data))
                 
             return response_list
@@ -548,7 +559,7 @@ async def get_processing_orders(
         raise HTTPException(status_code=500, detail="Failed to fetch processing orders.")
     finally:
         if conn: await conn.close()
-
+        
 @router_purchase_order.post(
     "/online-order",
     status_code=status.HTTP_201_CREATED,
