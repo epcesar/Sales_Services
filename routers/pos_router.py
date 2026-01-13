@@ -668,7 +668,7 @@ async def create_sale(
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"https://bleu-stockservices.onrender.com/users/employee_name",
+                    f"https://authservices-npr8.onrender.com/users/employee_name",
                     params={"username": cashier_name},
                     headers={"Authorization": f"Bearer {current_user['access_token']}"},
                     timeout=5.0
