@@ -8,8 +8,8 @@ from routers import pos_router, purchase_order, cancelled_order, sales
 from routers.top_products import router_top_products
 from routers.transaction_history import router_transaction_history
 from routers.auto_cancel_orders import router_auto_cancel, auto_cancel_expired_orders
-from routers.refund import router_refund
-from routers.dashboard import router_dashboard
+from routers.refund import router_refund  # Import the router instance
+from routers.dashboard import router_dashboard  # Import the router instance
 
 # Global flag for background task
 _auto_cancel_task = None
@@ -53,10 +53,21 @@ app = FastAPI(
     title="POS and Order Service API",
     description="Handles sales creation and retrieves processing orders.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan  # Register lifespan handler
 )
 
-# --- CRITICAL: Add CORS middleware BEFORE including routers ---
+# --- Include all your routers ---
+app.include_router(pos_router.router_sales)
+app.include_router(purchase_order.router_purchase_order)
+app.include_router(cancelled_order.router_cancelled_order)
+app.include_router(router_top_products)
+app.include_router(router_transaction_history)
+app.include_router(sales.router_sales_metrics)
+app.include_router(router_auto_cancel)  
+app.include_router(router_refund)  
+app.include_router(router_dashboard)  
+
+# --- CORS middleware ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -66,45 +77,13 @@ app.add_middleware(
         "https://bleu-stockservices.onrender.com",
         "https://ims-restockservices.onrender.com",
         "https://bleu-oos-rouge.vercel.app",
-        "https://ordering-service-8e9d.onrender.com",
-        "https://blockchainservices.onrender.com",
-        "https://notificationservice-1jp5.onrender.com",
-        "http://localhost:3000",  # For local development
-        "http://localhost:5173",  # For Vite dev server
+        "https://ordering-service-8e9d.onrender.com",  # Add OOS service
+        "https://blockchainservices.onrender.com",  # Self
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],  # Important for some headers to be visible to frontend
 )
-
-# --- Register routers with DUAL paths for backward compatibility ---
-# This allows both old (/auth/sales) and new (/auth/purchase_orders) paths to work
-
-# Primary router registration (new path)
-app.include_router(
-    purchase_order.router_purchase_order,
-    prefix="/auth/purchase_orders",
-    tags=["Purchase Orders"]
-)
-
-# Backward compatibility registration (old path)
-# This makes /auth/sales/status/{status} work
-app.include_router(
-    purchase_order.router_purchase_order,
-    prefix="/auth/sales",
-    tags=["Sales (Legacy)"]
-)
-
-# Include other routers
-app.include_router(pos_router.router_sales)
-app.include_router(cancelled_order.router_cancelled_order)
-app.include_router(router_top_products)
-app.include_router(router_transaction_history)
-app.include_router(sales.router_sales_metrics)
-app.include_router(router_auto_cancel)
-app.include_router(router_refund)
-app.include_router(router_dashboard)
 
 # --- Health check endpoint ---
 @app.get("/", tags=["Health Check"])
@@ -112,41 +91,14 @@ def read_root():
     return {
         "status": "ok", 
         "message": "POS Service is running.",
-        "auto_cancel_enabled": _task_running,
-        "service": "Sales Service API",
-        "version": "1.0.0"
-    }
-
-# --- Additional health check for monitoring ---
-@app.get("/health", tags=["Health Check"])
-def health_check():
-    """
-    Detailed health check endpoint for monitoring services
-    """
-    return {
-        "status": "healthy",
-        "service": "sales-services",
-        "auto_cancel_task_running": _task_running,
-        "endpoints_available": True
+        "auto_cancel_enabled": _task_running
     }
 
 # --- Uvicorn runner ---
 if __name__ == "__main__":
     import uvicorn
     
-    print("=" * 60)
-    print("🚀 Starting POS Service")
-    print("=" * 60)
-    print("📍 Server: http://0.0.0.0:9000")
-    print("📚 API Docs: http://127.0.0.1:9000/docs")
-    print("🔄 Auto-cancel: Enabled")
-    print("🌐 CORS: Configured for production and development")
-    print("=" * 60)
-    
-    uvicorn.run(
-        "main:app", 
-        port=9000, 
-        host="0.0.0.0", 
-        reload=True,
-        log_level="info"
-    )
+    print("--- Starting POS Service on http://0.0.0.0:9000 ---")
+    print("API docs available at http://127.0.0.1:9000/docs")
+    print("Auto-cancel will start automatically on startup")
+    uvicorn.run("main:app", port=9000, host="0.0.0.0", reload=True)
