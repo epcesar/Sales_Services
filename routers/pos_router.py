@@ -6,8 +6,9 @@ from decimal import Decimal
 import json
 import sys
 import os
+import asyncio
 import httpx
-import logging 
+import logging
 
 # --- Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -119,27 +120,34 @@ async def log_to_blockchain(
     data: dict,
     token: str
 ):
-    try:
-        async with httpx.AsyncClient(timeout=150.0) as client:
-            payload = {
-                "service_identifier": service_identifier,
-                "action": action,
-                "entity_type": entity_type,
-                "entity_id": entity_id,
-                "actor_username": actor_username,
-                "change_description": change_description,
-                "data": data
-            }
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
-            response = await client.post(BLOCKCHAIN_LOG_URL, json=payload, headers=headers)
-            response.raise_for_status()
-            result = response.json()
-            logger.info(f"✅ Blockchain log created: TX {result.get('transaction_hash')} for {entity_type} ID {entity_id}")
-    except Exception as e:
-        logger.error(f"❌ Blockchain logging failed for {entity_type} {entity_id}: {e}", exc_info=True)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                payload = {
+                    "service_identifier": service_identifier,
+                    "action": action,
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "actor_username": actor_username,
+                    "change_description": change_description,
+                    "data": data
+                }
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json"
+                }
+                response = await client.post(BLOCKCHAIN_LOG_URL, json=payload, headers=headers)
+                response.raise_for_status()
+                result = response.json()
+                logger.info(f"✅ Blockchain log created: TX {result.get('transaction_hash')} for {entity_type} ID {entity_id}")
+                return  # Success, exit function
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Blockchain logging attempt {attempt + 1} failed for {entity_type} {entity_id}: {e}. Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+            else:
+                logger.error(f"❌ Blockchain logging failed for {entity_type} {entity_id} after {max_retries} attempts: {e}", exc_info=True)
 
 
 # --- Helper to call Inventory Services ---
@@ -156,19 +164,26 @@ async def trigger_inventory_deduction(url: str, cart_items: List[SaleItem], toke
         ]
     }
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            response.raise_for_status()
-            logger.info(f"Successfully requested {inventory_type.upper()} deduction.")
-    except Exception as e:
-        error_text = str(e)
-        if hasattr(e, 'response') and e.response:
-            try:
-                error_text = e.response.json().get('detail', e.response.text)
-            except:
-                error_text = e.response.text
-        logger.critical(f"{inventory_type.upper()}-SYNC-FAILURE: Sale processed, but failed to deduct. Error: {error_text}")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+                response.raise_for_status()
+                logger.info(f"Successfully requested {inventory_type.upper()} deduction.")
+                return  # Success, exit function
+        except Exception as e:
+            error_text = str(e)
+            if hasattr(e, 'response') and e.response:
+                try:
+                    error_text = e.response.json().get('detail', e.response.text)
+                except:
+                    error_text = e.response.text
+            if attempt < max_retries - 1:
+                logger.warning(f"{inventory_type.upper()} deduction attempt {attempt + 1} failed: {error_text}. Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+            else:
+                logger.critical(f"{inventory_type.upper()}-SYNC-FAILURE: Sale processed, but failed to deduct after {max_retries} attempts. Error: {error_text}")
 
 
 # --- Background task to handle inventory deductions ---
