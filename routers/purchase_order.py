@@ -104,7 +104,7 @@ async def process_inventory_restock_background(order_id: str, items_to_restock: 
         ingredients_url = "https://bleu-stockservices.onrender.com/ingredients/restock-from-cancelled-order"
         materials_url = "https://bleu-stockservices.onrender.com/materials/restock-from-cancelled-order"
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=150.0) as client:
             tasks = [
                 client.post(ingredients_url, json=cancelled_items_payload, headers=headers),
                 client.post(materials_url, json=cancelled_items_payload, headers=headers)
@@ -136,7 +136,7 @@ async def log_to_blockchain(
 ):
     """Send activity logs to the blockchain service asynchronously."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=150.0) as client:
             payload = {
                 "service_identifier": service_identifier,
                 "action": action,

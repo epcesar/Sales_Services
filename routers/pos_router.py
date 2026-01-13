@@ -120,7 +120,7 @@ async def log_to_blockchain(
     token: str
 ):
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=150.0) as client:
             payload = {
                 "service_identifier": service_identifier,
                 "action": action,
