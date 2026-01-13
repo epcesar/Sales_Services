@@ -71,20 +71,21 @@ app.include_router(router_dashboard)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://bleu-pos-tau.vercel.app",
-        "https://bleu-ims-beta.vercel.app",
-        "https://authservices-npr8.onrender.com",
-        "https://bleu-stockservices.onrender.com",
-        "https://ims-restockservices.onrender.com",
-        "https://bleu-oos-rouge.vercel.app",
-        "https://ordering-service-8e9d.onrender.com",  # Add OOS service
-        "https://blockchainservices.onrender.com",  # Self
+        '*',  # Self
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# "https://bleu-pos-tau.vercel.app",
+#         "https://bleu-ims-beta.vercel.app",
+#         "https://authservices-npr8.onrender.com",
+#         "https://bleu-stockservices.onrender.com",
+#         "https://ims-restockservices.onrender.com",
+#         "https://bleu-oos-rouge.vercel.app",
+#         "https://ordering-service-8e9d.onrender.com",  # Add OOS service
+#         "https://blockchainservices.onrender.com"
 # --- Health check endpoint ---
 @app.get("/", tags=["Health Check"])
 def read_root():
