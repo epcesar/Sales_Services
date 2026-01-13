@@ -381,8 +381,8 @@ async def get_processing_orders(
             sql = """
                 SELECT
                     s.SaleID, s.OrderType, s.PaymentMethod, s.CreatedAt, 
-                    cs.CashierName,
-                    s.TotalDiscountAmount, s.PromotionalDiscountAmount, s.Status,
+                    LOWER(cs.CashierName) AS CashierName,
+                    s.TotalDiscountAmount, s.PromotionalDiscountAmount, s.Status, s.GCashReferenceNumber,
                     si.SaleItemID, si.ItemName, si.Quantity AS ItemQuantity, si.UnitPrice, si.Category,
                     a.AddonID, a.AddonName, a.Price AS AddonPrice, sia.Quantity AS AddonQuantity
                 FROM Sales AS s
@@ -395,10 +395,10 @@ async def get_processing_orders(
             params = []
             if user_role in ["admin", "manager"]:
                 if cashierName:
-                    sql += " AND cs.CashierName = ? "
+                    sql += " AND LOWER(cs.CashierName) = LOWER(?) "
                     params.append(cashierName)
             else:
-                sql += " AND cs.CashierName = ? "
+                sql += " AND LOWER(cs.CashierName) = LOWER(?) "
                 params.append(logged_in_username)
             sql += " ORDER BY s.CreatedAt ASC, s.SaleID ASC, si.SaleItemID ASC;"
             
@@ -418,6 +418,7 @@ async def get_processing_orders(
                         "orderType": row.OrderType,
                         "paymentMethod": row.PaymentMethod, 
                         "cashierName": row.CashierName or "Unknown",
+                        "GCashReferenceNumber": row.GCashReferenceNumber,
                         "items": 0, 
                         "orderItems": [], 
                         "total": 0, 
@@ -486,7 +487,7 @@ async def get_processing_orders(
                             'discountAmount': float(disc_row.DiscountAmount)
                         })
                     
-                    # ✅ Fetch item-level promotions
+                    # Fetch item-level promotions
                     sql_item_promotions = """
                         SELECT 
                             p.name AS PromotionName,
