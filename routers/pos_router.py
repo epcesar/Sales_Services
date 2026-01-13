@@ -144,8 +144,7 @@ async def log_to_blockchain(
                 return  # Success, exit function
         except Exception as e:
             if attempt < max_retries - 1:
-                logger.warning(f"Blockchain logging attempt {attempt + 1} failed for {entity_type} {entity_id}: {e}. Retrying in 5 seconds...")
-                await asyncio.sleep(5)
+                logger.warning(f"Blockchain logging attempt {attempt + 1} failed for {entity_type} {entity_id}: {e}. Retrying immediately...")
             else:
                 logger.error(f"❌ Blockchain logging failed for {entity_type} {entity_id} after {max_retries} attempts: {e}", exc_info=True)
 
